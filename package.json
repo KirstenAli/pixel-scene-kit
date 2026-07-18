@@ -1,7 +1,7 @@
 {
   "name": "pixel-scene-kit",
   "version": "0.2.0",
-  "description": "An intuitive pixel framebuffer with canvas rendering and a tiny solid 3D engine.",
+  "description": "From individual pixels to animated 3D scenes through one readable JavaScript API.",
   "type": "module",
   "main": "./src/index.js",
   "types": "./index.d.ts",
