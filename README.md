@@ -2,7 +2,7 @@
 
 Start with a pixel. End up with a dragon.
 
-Pixel Scene Kit is a small JavaScript software renderer. At the bottom is a plain grid of pixels; on top of that are a few 2D drawing tools, a camera, triangle rasterisation, lighting, and a depth buffer. There is no WebGL and there are no runtime dependencies.
+Pixel Scene Kit starts with a grid you can colour one pixel at a time, then builds upward into 2D drawing, animation, cameras, meshes, lighting, and solid 3D scenes. It is written in plain JavaScript, with no WebGL and no runtime dependencies.
 
 I wanted the path from `frame.pixel(10, 12)` to a rotating 3D mesh to stay visible and understandable. The code is deliberately split into small modules so you can read it, change it, or borrow the interesting parts for your own experiments.
 
