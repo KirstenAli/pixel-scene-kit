@@ -30,6 +30,14 @@
     "wireframe",
     "3d"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KirstenAli/pixel-scene-kit.git"
+  },
+  "homepage": "https://github.com/KirstenAli/pixel-scene-kit#readme",
+  "bugs": {
+    "url": "https://github.com/KirstenAli/pixel-scene-kit/issues"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=18"
