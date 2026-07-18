@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pixel Scene Kit — solid dragon</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        display: grid;
+        place-items: center;
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 50% 40%, #17243a 0, #080c14 42%, #030509 100%);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      main { position: relative; }
+      canvas {
+        display: block;
+        max-width: 94vw;
+        max-height: 88vh;
+        image-rendering: pixelated;
+        filter: drop-shadow(0 0 14px rgb(120 247 207 / 24%));
+      }
+      header {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        z-index: 1;
+        color: #bafde7;
+        text-shadow: 0 0 12px #78f7cf;
+        pointer-events: none;
+      }
+      h1 { margin: 0; font-size: clamp(0.8rem, 2vw, 1.1rem); letter-spacing: 0.14em; }
+      p { margin: 0.35rem 0 0; color: #668b83; font-size: 0.72rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>SOLID PIXEL DRAGON</h1>
+        <p>drag to rotate · space to pause</p>
+      </header>
+      <canvas id="screen" aria-label="An animated solid pixel dragon"></canvas>
+    </main>
+
+    <script type="module" src="./dragon.js"></script>
+  </body>
+</html>

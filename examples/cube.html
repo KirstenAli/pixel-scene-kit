@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pixel Scene Kit — spinning cube</title>
+    <style>
+      html, body { height: 100%; }
+      body {
+        display: grid;
+        place-items: center;
+        margin: 0;
+        background: #080b10;
+      }
+      canvas { max-width: 90vw; image-rendering: pixelated; }
+    </style>
+  </head>
+  <body>
+    <canvas id="screen"></canvas>
+    <script type="module">
+      import {
+        animate,
+        createCanvasRenderer,
+        createCube,
+        createFrame,
+        createScene,
+      } from "../src/index.js";
+
+      const frame = createFrame(64, 48);
+      const screen = createCanvasRenderer(document.querySelector("#screen"), {
+        scale: 10,
+        gap: 0.7,
+        background: "#080b10",
+        foreground: "#6df7c1",
+      });
+      const scene = createScene();
+      const cube = scene.add(createCube({ size: 2.4 }));
+
+      animate(({ delta }) => {
+        cube.rotation.x += delta * 0.7;
+        cube.rotation.y += delta;
+        scene.render(frame);
+        screen.render(frame);
+      });
+    </script>
+  </body>
+</html>
