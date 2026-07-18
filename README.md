@@ -17,6 +17,7 @@ The 3D code is just a way of deciding which pixels to colour. The snippets below
 ```js
 import {
   animate,
+  createCamera,
   createCanvasRenderer,
   createCube,
   createFrame,
@@ -94,7 +95,7 @@ A position inside a room needs one extra number:
 
 Easy way to think about it: **`x`, `y`, and `z` are the address of one dot in a room**.
 
-### 5. Three dots make one face
+### 5. A face selects three dots
 
 An `Object3D` begins with a list of 3D dots called vertices:
 
@@ -106,7 +107,7 @@ const vertices = [
 ];
 ```
 
-A face tells the renderer to join three dots and colour the area inside them:
+A face is a small piece of data that selects three vertices:
 
 ```js
 const faces = [
@@ -114,20 +115,22 @@ const faces = [
 ];
 ```
 
-`[0, 1, 2]` means: use dots 0, 1, and 2 as the three corners of a filled triangle.
+`[0, 1, 2]` means: vertices 0, 1, and 2 are the corners of one triangular surface.
 
 ```text
        dot 2
          ●
-        /█\
-       /███\
-      /█████\
+        / \
+       /   \
+      /     \
 dot 0 ●───────● dot 1
 ```
 
+A face does not project anything and does not colour any pixels. It only says which three dots belong to the same surface. Projection and rasterisation happen later.
+
 A triangle is flat, but it can be tilted and placed inside a 3D room, just like a flat sheet of paper can be tilted in a real room. Lots of these flat faces joined together make the dragon's outer skin.
 
-Easy way to think about it: **vertices are dots; faces are filled patches between the dots; a mesh is all the patches joined together**.
+Easy way to think about it: **vertices are dots; a face chooses three dots; a mesh is all those triangular surfaces joined together**.
 
 ### 6. An object is a movable mesh
 
@@ -144,7 +147,17 @@ triangle.rotation.y = 0.5;
 triangle.scale.y = 2;
 ```
 
+The constructor has three parts:
+
+```js
+new Object3D(vertices, edges, options);
+```
+
+The empty `[]` above means that no separate outline edges were supplied. The solid face can still be rendered. Leaving out outlines gives a cleaner solid surface; adding edges gives a technical, pixel-art, or cartoon outline.
+
 Changing the object moves all its vertices together. The original mesh does not have to be rewritten.
+
+A dragon is normally one `Object3D` containing many vertices and faces. It can instead be split into several objects—for example, a body and two wings—when those parts need to move independently.
 
 Easy way to think about it: **an object is a toy you can pick up, move, turn, or resize**.
 
@@ -174,11 +187,86 @@ The camera decides where the scene is viewed from. The default camera sits in fr
 
 A camera turns each 3D vertex into a 2D screen position. This is called projection. It is the same basic thing a real camera does when it turns a room into a flat photograph.
 
-Near objects appear larger. Far objects appear smaller. The `z` information is also kept as a distance so the renderer can decide what is in front.
+Projection does not change the real 3D object. It calculates where each of its vertices should appear in the 2D frame. Farther vertices are placed closer to the centre, so the object's screen image becomes smaller.
+
+The core calculation is:
+
+```text
+screen position = screen centre + position × zoom ÷ distance
+```
+
+Pixel Scene Kit expresses that calculation like this:
+
+```js
+const depth = -view.z;
+
+const screenX = frame.width / 2
+  + (view.x * focalLength) / depth;
+
+const screenY = frame.height / 2
+  - (view.y * focalLength) / depth;
+```
+
+`view` is the vertex position relative to the camera. `focalLength` is the camera's zoom, calculated from its field of view. Screen Y uses subtraction because canvas coordinates increase downwards.
+
+Here is one actual vertex on a 20 by 12 frame. The camera is at `z: 5`, the field of view is 90 degrees, and that gives a focal length of 10:
+
+```js
+const frame = createFrame(20, 12);
+const camera = createCamera({
+  position: { z: 5 },
+  fov: 90,
+});
+
+const vertex = { x: 2, y: 1, z: 0 };
+const projected = camera.project(vertex, frame);
+
+// { x: 14, y: 4, depth: 5 }
+```
+
+The X calculation is:
+
+```text
+10 + (2 × 10 ÷ 5) = 14
+```
+
+If the same point moves twice as far away, its screen offset is halved:
+
+```text
+close, depth 5:  10 + (2 × 10 ÷ 5)  = 14
+far, depth 10:   10 + (2 × 10 ÷ 10) = 12
+```
+
+Projection repeats this calculation for every vertex. When all the projected vertices move closer together, the complete triangle, cube, or dragon looks smaller.
 
 Easy way to think about it: **the camera is your eye, and projection is the photograph it sees**.
 
-### 9. The rasterizer colours the triangle's pixels
+### 9. The rasterizer turns projected triangles into pixels
+
+At this point the jobs are separate:
+
+```text
+face       -> chooses three 3D vertices
+projection -> calculates three 2D screen positions
+rasterizer -> colours the pixels between those screen positions
+```
+
+The renderer's flow is approximately:
+
+```js
+const face = [0, 1, 2];
+const triangle3D = face.map((index) => viewVertices[index]);
+const triangle2D = triangle3D.map((point) => camera.projectView(point, frame));
+
+rasterizeTriangle(
+  frame,
+  depthBuffer,
+  triangle2D[0],
+  triangle2D[1],
+  triangle2D[2],
+  "cyan",
+);
+```
 
 After the camera projects a face, it has three corners on the 2D screen:
 
@@ -204,6 +292,10 @@ Easy way to think about it: **the rasterizer is a colouring pen that stays insid
 
 ### 10. The depth buffer makes the nearest surface win
 
+The depth buffer exists to answer one question:
+
+> If several surfaces want to colour the same screen pixel, which surface is actually visible?
+
 One screen pixel can line up with several parts of an object:
 
 ```text
@@ -220,7 +312,25 @@ far wing:  8 units away  -> hidden
 
 Easy way to think about it: **every pixel has a closest-wins contest**.
 
-The depth buffer is cleared for every new animation frame, so visibility is recalculated after the dragon moves or rotates.
+It is an invisible grid the same size as the frame. The frame stores colours; the depth buffer stores the closest distance found at each pixel:
+
+```text
+colour frame pixel: cyan
+depth buffer pixel: 3
+```
+
+The depth buffer starts each new animation frame filled with infinity, meaning nothing has been seen yet. Whenever a triangle reaches a pixel, the renderer performs this test:
+
+```js
+if (newDepth < savedDepth) {
+  save(newDepth);
+  frame.pixel(x, y, color);
+}
+```
+
+A nearby wing at depth 3 replaces a body at depth 5. A far wing at depth 8 is rejected. This works per pixel, so only the overlapping part is hidden, and it works regardless of which object was rendered first.
+
+The buffer is cleared for every new animation frame, so visibility is recalculated after the dragon moves or rotates. Hidden-line mode also uses it to stop far-side outlines showing through solid faces.
 
 ### 11. The whole flow
 
@@ -231,7 +341,7 @@ create a frame
     -> put objects in a scene
     -> move or rotate the objects
     -> the camera turns 3D vertices into 2D positions
-    -> the rasterizer colours pixels inside each face
+    -> the rasterizer colours pixels inside each projected triangle
     -> the depth buffer keeps the closest surface at each pixel
     -> the frame now contains the finished picture
     -> the canvas renderer displays it
@@ -266,12 +376,12 @@ animate(({ delta }) => {
 | Canvas renderer | Displays the frame | The screen |
 | `animate` | Builds pictures repeatedly | A flipbook |
 | Vertices | Store 3D points | Dots in a room |
-| Faces | Fill the area between three vertices | Flat patches of skin |
+| Faces | Select three vertices that form one surface | A note joining three dots |
 | `Object3D` | Holds and moves one mesh | A movable toy |
 | Scene | Holds and renders the objects | A tabletop |
-| Camera | Chooses the viewpoint and projects 3D into 2D | Your eye taking a photo |
-| Rasterizer | Finds pixels inside projected triangles | A colouring pen |
-| Depth buffer | Keeps the nearest surface at each pixel | Closest wins |
+| Camera | Chooses the viewpoint and projects every vertex into 2D | Your eye taking a photo |
+| Rasterizer | Colours pixels inside the three projected corners | A colouring pen |
+| Depth buffer | Decides which surface is visible at every pixel | Closest wins |
 | Lighting | Makes faces lighter or darker | A lamp |
 | Clipping | Cuts away geometry that crosses the camera boundary | Camera-safe scissors |
 
@@ -352,6 +462,8 @@ The default camera is at `{ x: 0, y: 0, z: 5 }`, looking towards the origin. Pos
 
 The dragon is a larger demonstration of the same public API. It has a procedural mesh, solid triangle faces, depth-tested outlines, simple lighting, a star field, and a complete 360-degree rotation.
 
+![The pixel dragon shown at three points in its rotation](docs/dragon-rotation.png)
+
 - [`dragon.html`](examples/dragon.html) contains the page and presentation.
 - [`dragon.js`](examples/dragon.js) sets up the frame, camera, scene, controls, and animation.
 - [`dragon-model.js`](examples/dragon-model.js) builds the dragon from vertices, edges, and faces.
@@ -430,6 +542,24 @@ scene.add(triangle);
 List face vertices counter-clockwise when looking at the outside of the object. For an open surface that should be visible from both sides, set `doubleSided: true`. You can also provide one colour per face with `faceColors`.
 
 ## Loading an OBJ file
+
+OBJ is a plain-text format for storing a 3D model. It is not the same thing as Pixel Scene Kit's `Object3D` class.
+
+This complete OBJ file describes one triangle:
+
+```obj
+v -1 -1 0
+v  1 -1 0
+v  0  1 0
+
+f 1 2 3
+```
+
+Each `v` line stores one vertex as `x y z`. The `f` line says that vertices 1, 2, and 3 form one face. Loading the file converts that text into an `Object3D`:
+
+```text
+.obj text -> vertices and faces -> Object3D -> scene -> pixels
+```
 
 ```js
 import { loadOBJ, parseOBJ } from "pixel-scene-kit";
