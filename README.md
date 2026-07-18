@@ -166,7 +166,7 @@ Easy way to think about it: **an object is a toy you can pick up, move, turn, or
 The scene keeps track of all the objects:
 
 ```js
-const scene = createScene();
+const scene = createScene({ mode: "solid" });
 const cube = createCube();
 
 scene.add(triangle);
@@ -187,7 +187,7 @@ The camera decides where the scene is viewed from. The default camera sits in fr
 
 A camera turns each 3D vertex into a 2D screen position. This is called projection. It is the same basic thing a real camera does when it turns a room into a flat photograph.
 
-Projection does not change the real 3D object. It calculates where each of its vertices should appear in the 2D frame. Farther vertices are placed closer to the centre, so the object's screen image becomes smaller.
+Projection does not change the real 3D object. It calculates where each of its vertices should appear in the 2D frame. For the same left/right or up/down offset, a larger depth produces a smaller offset on screen. That is why a whole object usually looks smaller as it moves away from the camera.
 
 The core calculation is:
 
@@ -207,7 +207,7 @@ const screenY = frame.height / 2
   - (view.y * focalLength) / depth;
 ```
 
-`view` is the vertex position relative to the camera. `focalLength` is the camera's zoom, calculated from its field of view. Screen Y uses subtraction because canvas coordinates increase downwards.
+`view` is the vertex position relative to the camera. `focalLength` acts like zoom and is calculated from the camera's field of view. Screen Y uses subtraction because canvas coordinates increase downwards.
 
 Here is one actual vertex on a 20 by 12 frame. The camera is at `z: 5`, the field of view is 90 degrees, and that gives a focal length of 10:
 
@@ -221,7 +221,7 @@ const camera = createCamera({
 const vertex = { x: 2, y: 1, z: 0 };
 const projected = camera.project(vertex, frame);
 
-// { x: 14, y: 4, depth: 5 }
+// approximately { x: 14, y: 4, depth: 5 }
 ```
 
 The X calculation is:
@@ -237,18 +237,20 @@ close, depth 5:  10 + (2 × 10 ÷ 5)  = 14
 far, depth 10:   10 + (2 × 10 ÷ 10) = 12
 ```
 
-Projection repeats this calculation for every vertex. When all the projected vertices move closer together, the complete triangle, cube, or dragon looks smaller.
+Projection repeats this calculation for every vertex. As an object moves away, its projected vertices normally move closer together, so the complete triangle, cube, or dragon looks smaller.
 
 Easy way to think about it: **the camera is your eye, and projection is the photograph it sees**.
 
-### 9. The rasterizer turns projected triangles into pixels
+### 9. The rasterizer finds the pixels covered by a triangle
 
 At this point the jobs are separate:
 
 ```text
 face       -> chooses three 3D vertices
 projection -> calculates three 2D screen positions
-rasterizer -> colours the pixels between those screen positions
+rasterizer -> finds the candidate pixels inside those screen positions
+depth test -> decides which candidate surface is visible at each pixel
+frame      -> stores the winning colour
 ```
 
 The renderer's flow is approximately:
@@ -278,7 +280,7 @@ After the camera projects a face, it has three corners on the 2D screen:
       ●───────●
 ```
 
-The rasterizer finds the screen pixels inside those corners and colours them:
+The rasterizer finds the screen pixels inside those corners and calculates a depth for each one:
 
 ```text
           ●
@@ -288,7 +290,9 @@ The rasterizer finds the screen pixels inside those corners and colours them:
       ●███████●
 ```
 
-Easy way to think about it: **the rasterizer is a colouring pen that stays inside the triangle**.
+Those are candidate pixels. Before a colour is written, the depth buffer checks whether that part of the triangle is closer than anything already found there.
+
+Easy way to think about it: **the rasterizer is a stencil that says which pixels the triangle covers; the depth buffer decides which stencil is on top**.
 
 ### 10. The depth buffer makes the nearest surface win
 
@@ -319,11 +323,11 @@ colour frame pixel: cyan
 depth buffer pixel: 3
 ```
 
-The depth buffer starts each new animation frame filled with infinity, meaning nothing has been seen yet. Whenever a triangle reaches a pixel, the renderer performs this test:
+The depth buffer starts each new animation frame filled with infinity, meaning nothing has been seen yet. Whenever the rasterizer finds a candidate pixel, the renderer performs this test. This simplified version matches the decision made for solid triangles:
 
 ```js
-if (newDepth < savedDepth) {
-  save(newDepth);
+if (newDepth <= savedDepth) {
+  if (newDepth < savedDepth) save(newDepth);
   frame.pixel(x, y, color);
 }
 ```
@@ -341,8 +345,9 @@ create a frame
     -> put objects in a scene
     -> move or rotate the objects
     -> the camera turns 3D vertices into 2D positions
-    -> the rasterizer colours pixels inside each projected triangle
-    -> the depth buffer keeps the closest surface at each pixel
+    -> the rasterizer finds candidate pixels inside each projected triangle
+    -> the depth buffer accepts the closest surface at each pixel
+    -> accepted colours are written into the frame
     -> the frame now contains the finished picture
     -> the canvas renderer displays it
     -> repeat for the next animation frame
@@ -380,7 +385,7 @@ animate(({ delta }) => {
 | `Object3D` | Holds and moves one mesh | A movable toy |
 | Scene | Holds and renders the objects | A tabletop |
 | Camera | Chooses the viewpoint and projects every vertex into 2D | Your eye taking a photo |
-| Rasterizer | Colours pixels inside the three projected corners | A colouring pen |
+| Rasterizer | Finds candidate pixels inside the three projected corners | A triangle stencil |
 | Depth buffer | Decides which surface is visible at every pixel | Closest wins |
 | Lighting | Makes faces lighter or darker | A lamp |
 | Clipping | Cuts away geometry that crosses the camera boundary | Camera-safe scissors |
@@ -462,7 +467,7 @@ The default camera is at `{ x: 0, y: 0, z: 5 }`, looking towards the origin. Pos
 
 The dragon is a larger demonstration of the same public API. It has a procedural mesh, solid triangle faces, depth-tested outlines, simple lighting, a star field, and a complete 360-degree rotation.
 
-![The pixel dragon shown at three points in its rotation](docs/dragon-rotation.png)
+![The pixel dragon shown at three points in its rotation](https://raw.githubusercontent.com/KirstenAli/pixel-scene-kit/main/docs/dragon-rotation.png)
 
 - [`dragon.html`](examples/dragon.html) contains the page and presentation.
 - [`dragon.js`](examples/dragon.js) sets up the frame, camera, scene, controls, and animation.
@@ -515,6 +520,8 @@ scene.render(frame, {
 
 Solid modes use one depth buffer for the whole scene. That means a nearby surface wins even when the farther object was added later. Geometry crossing the camera's near plane is clipped instead of suddenly disappearing.
 
+Flat lighting shades hexadecimal colours such as `#29c99b` and `rgb(...)` colours. Other valid canvas colour strings still render, but are used without automatic lightening or darkening.
+
 ## Building your own mesh
 
 An `Object3D` has vertices, optional wireframe edges, and triangular faces:
@@ -555,7 +562,7 @@ v  0  1 0
 f 1 2 3
 ```
 
-Each `v` line stores one vertex as `x y z`. The `f` line says that vertices 1, 2, and 3 form one face. Loading the file converts that text into an `Object3D`:
+Each `v` line stores one vertex as `x y z`. The `f` line says that vertices 1, 2, and 3 form one face. OBJ counts vertices from 1; JavaScript arrays and `Object3D` faces count from 0. The loader converts the OBJ indexes for you, then turns the text into an `Object3D`:
 
 ```text
 .obj text -> vertices and faces -> Object3D -> scene -> pixels
@@ -592,6 +599,14 @@ Polygon faces are triangulated automatically, while their original boundary edge
 This is a CPU renderer made for small canvases, pixel art, learning, and experiments. It is not trying to compete with a GPU engine such as Three.js—and that is rather the point.
 
 ## Install and develop
+
+The package is not on the npm registry yet. Until the first npm release, install it directly from GitHub:
+
+```sh
+npm install github:KirstenAli/pixel-scene-kit
+```
+
+After it is published to npm, the command will be:
 
 ```sh
 npm install pixel-scene-kit
