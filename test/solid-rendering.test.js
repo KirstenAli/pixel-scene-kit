@@ -96,6 +96,31 @@ test("OBJ parsing triangulates faces and keeps polygon edges", () => {
   assert.equal(mesh.edges.length, 4);
 });
 
+test("OBJ parsing handles face tokens and reports invalid geometry", () => {
+  const mesh = parseOBJ(`
+    v 0 0 0
+    v 1 0 0
+    v 0 1 0
+    f 1/4/7 2/5/7 3/6/7
+  `);
+
+  assert.deepEqual(mesh.vertices, [
+    { x: 0, y: 0, z: 0 },
+    { x: 1, y: 0, z: 0 },
+    { x: 0, y: 1, z: 0 },
+  ]);
+  assert.deepEqual(mesh.faces, [[0, 1, 2]]);
+
+  assert.throws(
+    () => parseOBJ("v 0 0 nope"),
+    /Invalid OBJ vertex/,
+  );
+  assert.throws(
+    () => parseOBJ("v 0 0 0\nf 1 2 3"),
+    /missing vertex/,
+  );
+});
+
 test("loadOBJ accepts an injectable fetch function", async () => {
   const mesh = await loadOBJ("dragon.obj", {
     fetch: async () => ({
